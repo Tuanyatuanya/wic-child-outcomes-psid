@@ -1,0 +1,57 @@
+---
+title: "Prenatal WIC and AFDC Participation and Children's Reading Achievement"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "figures/01-", fig.width = 7, fig.height = 4.5, dpi = 110, message = FALSE, warning = FALSE)
+```
+
+Hierarchical OLS: does prenatal participation in WIC and AFDC predict children's 1997 reading scores (PSID-CDS) beyond child age, family income, low birth weight and home environment? Full write-up: [report](../reports/01_WIC_AFDC_reading_achievement.pdf).
+
+```{r report1}
+good <- read.csv('../data/good.csv')
+
+df <- na.omit(good[, c("WICpreg", "AFDCpreg", "readss97", "AGE97", "faminc97", "bthwht", "HOME97")])
+
+summary(df)
+
+#For binary variables (proportions)
+colMeans(df[, c("WICpreg", "AFDCpreg", "bthwht")])
+
+# Model 0: Controls only
+m0 <- lm(readss97 ~ AGE97 + faminc97 + bthwht + HOME97, data = df)
+# Model 1: Add WIC
+m1 <- lm(readss97 ~ AGE97 + faminc97 + bthwht + HOME97 + WICpreg, data = df)
+# Model 2: Add AFDC
+m2 <- lm(readss97 ~ AGE97 + faminc97 + bthwht + HOME97 + AFDCpreg, data = df)
+# Model 3: Add both WIC + AFDC
+m3 <- lm(readss97 ~ AGE97 + faminc97 + bthwht + HOME97 + WICpreg + AFDCpreg, data = df)
+
+stargazer::stargazer(m0, m1, m2, m3, type = "text")
+
+summary(m3) 
+
+# Compare R-squared values
+summary(m0)$r.squared
+
+summary(m1)$r.squared
+
+summary(m2)$r.squared
+
+summary(m3)$r.squared
+
+delta_wic <- summary(m1)$r.squared - summary(m0)$r.squared
+delta_afdc <- summary(m2)$r.squared - summary(m0)$r.squared
+delta_both <- summary(m3)$r.squared - summary(m0)$r.squared
+
+cat("delta R-squared WIC:", delta_wic, "\n")
+
+cat("delta R-squared AFDC:", delta_afdc, "\n")
+
+cat("delta R-squared Both:", delta_both, "\n")
+
+df_z <- as.data.frame(scale(df))
+m3_z <- lm(readss97 ~ AGE97 + faminc97 + bthwht + HOME97 + WICpreg + AFDCpreg, data = df_z)
+summary(m3_z)
+```

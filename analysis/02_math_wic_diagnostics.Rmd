@@ -1,0 +1,122 @@
+---
+title: "Prenatal WIC Participation and Children's Math Achievement: Diagnostics and Model Correction"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "figures/02-", fig.width = 7, fig.height = 4.5, dpi = 110, message = FALSE, warning = FALSE)
+```
+
+Baseline OLS, full assumption diagnostics (linearity, Breusch–Pagan/White heteroskedasticity tests, normality, influence), then a revised model with asinh-transformed income, home-environment score and HC3 robust standard errors. Full write-up: [report](../reports/02_WIC_math_achievement_diagnostics.pdf).
+
+```{r preparation}
+good <- read.csv('../data/good.csv')
+library(dplyr)
+library(car)          
+library(ggplot2)
+library(psych)
+library(lmtest)  
+library(sandwich) 
+library(tidyr)
+library(stargazer)
+vars_needed <- c("mathraw97","AGE97","faminc97","bthwht","WICpreg","HOME97")
+df_core <- good %>%
+  select(all_of(vars_needed)) %>%
+  mutate(across(everything(), as.numeric))
+```
+
+```{r descriptives}
+# Numeric descriptives
+desc <- describe(df_core %>% select(mathraw97, AGE97, faminc97, HOME97))
+
+# Binary counts and proportions
+table(df_core$WICpreg, useNA = "ifany")
+prop.table(table(df_core$WICpreg, useNA = "ifany"))
+
+table(df_core$bthwht, useNA = "ifany")
+prop.table(table(df_core$bthwht, useNA = "ifany"))
+
+# Correlations
+pair_cor <- cor(df_core %>% select(mathraw97, AGE97, faminc97, HOME97),
+    use = "pairwise.complete.obs")
+```
+
+```{r descriptives-table}
+desc_t <- desc %>%
+  mutate(Variable = rownames(desc)) %>%
+  select(Variable, everything()) %>%
+  pivot_longer(
+    cols = -Variable,
+    names_to = "Statistic",
+    values_to = "Value"
+  ) %>%
+  pivot_wider(names_from = Variable, values_from = Value)
+print(desc_t)
+```
+
+```{r baseline-model}
+df_base <- df_core %>% drop_na(mathraw97, AGE97, faminc97, bthwht, WICpreg)
+m_base <- lm(mathraw97 ~ AGE97 + faminc97 + bthwht + WICpreg, data = df_base)
+summary(m_base)
+```
+
+```{r baseline-diagnostics}
+# Linearity (component + residual plots)
+crPlots(m_base)
+
+# Heteroskedasticity (Breusch–Pagan and White tests)
+bp1 <- bptest(m_base)                                         
+bp2 <- bptest(m_base, ~ fitted(m_base) + I(fitted(m_base)^2)) 
+bp_results <- data.frame(
+  Test = c("Breusch-Pagan", "White Test"),
+  BP = c(bp1$statistic, bp2$statistic),
+  df = c(bp1$parameter, bp2$parameter),
+  p_value = c(bp1$p.value, bp2$p.value)
+)
+print(bp_results)
+
+# Normality of residuals
+qqnorm(rstandard(m_base)); qqline(rstandard(m_base))
+hist(rstandard(m_base), main="Histogram of Residuals", xlab="Standardized Residuals")
+
+# Outliers and influence
+summary(influence.measures(m_base))
+plot(m_base, which = 5)  
+n <- nobs(m_base)
+which(cooks.distance(m_base) > 4/n)
+```
+
+```{r revised-model}
+df_rev <- df_core %>%
+  drop_na(mathraw97, AGE97, faminc97, bthwht, WICpreg, HOME97) %>%
+  mutate(asinh_faminc97 = asinh(faminc97))
+
+m_rev <- lm(mathraw97 ~ AGE97 + asinh_faminc97 + bthwht + WICpreg + HOME97, data = df_rev)
+summary(m_rev)
+
+# Robust (HC3) standard errors
+cov_hc3 <- vcovHC(m_rev, type = "HC3")
+coeftest(m_rev, vcov. = cov_hc3)
+
+# Diagnostics again
+crPlots(m_rev)
+bp_r_1 <- bptest(m_rev)
+bp_r_2 <- bptest(m_rev, ~ fitted(m_rev) + I(fitted(m_rev)^2))
+bp_results_2 <- data.frame(
+  Test = c("Breusch-Pagan", "White Test"),
+  BP = c(bp_r_1$statistic, bp_r_2$statistic),
+  df = c(bp_r_1$parameter, bp_r_2$parameter),
+  p_value = c(bp_r_1$p.value, bp_r_2$p.value)
+)
+print(bp_results_2)
+qqnorm(rstandard(m_rev)); qqline(rstandard(m_rev))
+```
+
+```{r compare-models}
+summary(m_base)$r.squared
+summary(m_rev)$r.squared
+summary(m_base)$adj.r.squared
+summary(m_rev)$adj.r.squared
+
+anova(m_base, m_rev)  # Model comparison (nested F-test)
+```

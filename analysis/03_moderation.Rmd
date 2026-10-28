@@ -1,0 +1,94 @@
+---
+title: "Moderation of the WIC–Math Association by Income, Race and Age"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "figures/03-", fig.width = 7, fig.height = 4.5, dpi = 110, message = FALSE, warning = FALSE)
+```
+
+Three interaction models test whether the association between prenatal WIC participation and 1997 math scores varies with (log, centered) family income, child race and child age. Full write-up: [report](../reports/03_WIC_moderation_effects.pdf).
+
+```{r report3}
+library(lmtest); library(sandwich)
+good <- read.csv("../data/good.csv")
+regdata <- subset(
+  good,
+  select = c(mathraw97, WICpreg, CHRACE, AGE97, faminc97, bthwht, HOME97)
+)
+
+regdata$RACE <- ifelse(regdata$CHRACE == 9, NA,
+                 ifelse(regdata$CHRACE == 1, 0,
+                 ifelse(regdata$CHRACE == 2, 1, NA)))
+
+regdata <- na.omit(regdata)
+
+min_inc <- min(regdata$faminc97, na.rm = TRUE)
+regdata$faminc97_log <- log(regdata$faminc97 - min_inc + 1)
+
+regdata$AGE97_c      <- as.numeric(scale(regdata$AGE97,       center = TRUE, scale = FALSE))
+regdata$faminc97_c   <- as.numeric(scale(regdata$faminc97_log,center = TRUE, scale = FALSE))
+regdata$HOME97_c     <- as.numeric(scale(regdata$HOME97,      center = TRUE, scale = FALSE))
+
+# N
+nrow(regdata)
+
+# Continuous variables: N, mean, sd, min, max
+vars_cont <- c("mathraw97", "AGE97", "faminc97", "HOME97")
+descriptives_cont <- sapply(
+  regdata[vars_cont],
+  function(x) c(
+    N    = sum(!is.na(x)),
+    Mean = mean(x),
+    SD   = sd(x),
+    Min  = min(x),
+    Max  = max(x)
+  )
+)
+descriptives_cont
+
+# Categorical variables: frequencies and proportions
+table(regdata$WICpreg)
+
+prop.table(table(regdata$WICpreg))
+
+table(regdata$RACE)
+
+prop.table(table(regdata$RACE))
+
+table(regdata$bthwht)
+
+prop.table(table(regdata$bthwht))
+
+# Correlation matrix for continuous vars
+cor_matrix <- cor(
+  regdata[, c("mathraw97", "AGE97", "faminc97", "HOME97")],
+  use = "pairwise.complete.obs"
+)
+cor_matrix
+
+### 1. Moderation by family income
+m_income <- lm(
+  mathraw97 ~ WICpreg * faminc97_c + AGE97_c + RACE + bthwht + HOME97_c,
+  data = regdata
+)
+summary(m_income)
+
+### 2. Moderation by race
+m_race <- lm(
+  mathraw97 ~ WICpreg * RACE + AGE97_c + faminc97_c + bthwht + HOME97_c,
+  data = regdata
+)
+summary(m_race)
+
+# coeftest(m_race, vcov = vcovHC(m_race, type = "HC3"))
+
+### 3. Moderation by age
+m_age <- lm(
+  mathraw97 ~ WICpreg * AGE97_c + faminc97_c + RACE + bthwht + HOME97_c,
+  data = regdata
+)
+summary(m_age)
+
+# coeftest(m_age, vcov = vcovHC(m_age, type = "HC3"))
+```
